@@ -1,0 +1,16 @@
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Training outputs
+checkpoints/
+submission.csv
+
+# Local dataset archives and extracted images
+Train_DATA/*.zip
+Train_DATA/train_images/
+Test_DATA/*.zip
+Test_DATA/eval_images/
