@@ -11,6 +11,6 @@ submission.csv
 
 # Local dataset archives and extracted images
 Train_DATA/*.zip
-Train_DATA/train_images/
 Test_DATA/*.zip
-Test_DATA/eval_images/
+Train_DATA
+Test_DATA
