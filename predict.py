@@ -1,35 +1,36 @@
-"""Run a saved checkpoint on evaluation images and write submission.csv."""
-
-import numpy as np
+"""Inference from a self-describing audited checkpoint; CSV schema enforced."""
+import argparse
+from pathlib import Path
 import pandas as pd
-import torch
-from torch.utils.data import DataLoader
 
-import config
-from dataset import LunarTerrainDataset
-from model import LunarFusionModel
+from experiment_utils import ROOT, atomic_csv, validate_submission
+from training_engine import Settings, setup, build_model, load_checkpoint, prediction_frame
 
 
-@torch.no_grad()
-def main() -> None:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    metadata = pd.read_csv(config.TEST_METADATA)
-    dataset = LunarTerrainDataset(metadata, config.TEST_IMAGE_DIR, training=False)
-    loader = DataLoader(dataset, batch_size=config.BATCH_SIZE, shuffle=False,
-                        num_workers=config.NUM_WORKERS, pin_memory=(device.type == "cuda"))
-    checkpoint = torch.load(config.BEST_CHECKPOINT, map_location=device)
-    model = LunarFusionModel(pretrained=False).to(device)
-    model.load_state_dict(checkpoint["model_state"])
-    model.eval()
-    threshold = float(checkpoint.get("threshold", 0.5))
-    predictions = []
-    for batch in loader:
-        logits = model(batch["image"].to(device), batch["azimuth"].to(device))
-        predictions.extend((torch.sigmoid(logits).cpu().numpy() >= threshold).astype(int))
-    submission = pd.DataFrame({"image_id": metadata["image_id"], "label": np.asarray(predictions, dtype=int)})
-    submission.to_csv(config.SUBMISSION_PATH, index=False)
-    print(f"Wrote {len(submission)} predictions to {config.SUBMISSION_PATH}")
+def predict(checkpoint,output):
+    state=load_checkpoint(checkpoint)
+    if state.get('schema')!=2:
+        raise ValueError('Legacy checkpoint: use its archived source/preprocessing in original_snapshot.')
+    settings=Settings(**state['settings']); setup(settings.seed)
+    model=build_model(settings,False).cuda(); model.load_state_dict(state['model'])
+    frame=pd.read_csv(ROOT/'Test_DATA/test_metadata.csv')
+    probabilities=prediction_frame(model,frame,settings,state['threshold'],ROOT/'Test_DATA/eval_images')
+    submission=pd.DataFrame(dict(image_id=frame.image_id,label=probabilities.prediction.astype(int)))
+    validate_submission(submission,frame.image_id)
+    output=Path(output)
+    if output.exists():
+        raise FileExistsError(f'Preserve the existing output or choose a new path: {output}')
+    atomic_csv(output,submission)
+    atomic_csv(output.with_name('evaluation_probabilities.csv'),probabilities)
+    print(f'Validated {len(submission)} predictions: {output}',flush=True)
+    return submission
 
 
-if __name__ == "__main__":
-    main()
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--checkpoint',type=Path,required=True)
+    parser.add_argument('--output',type=Path,required=True)
+    args=parser.parse_args(); predict(args.checkpoint,args.output)
+
+
+if __name__=='__main__': main()

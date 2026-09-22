@@ -7,6 +7,7 @@ venv/
 
 # Training outputs
 checkpoints/
+runs/
 submission.csv
 
 # Local dataset archives and extracted images
